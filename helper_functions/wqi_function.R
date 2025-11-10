@@ -164,7 +164,7 @@ wqi_calc <- function(period = c('Annual', 'Monthly'),
     ) %>%
     select(site, shortParmName, WaterYear, Month, value, WQI_Value, WQI) %>%
     group_by(site, shortParmName, WaterYear, Month) %>%
-    summarise(
+    reframe(
       value = mean(value, na.rm = TRUE),
       WQI_Value = mean(WQI_Value, na.rm = TRUE),
       WQI = mean(WQI, na.rm = TRUE),
@@ -186,10 +186,9 @@ wqi_calc <- function(period = c('Annual', 'Monthly'),
     sediment_score <- wqi_prep %>%
       filter(shortParmName %in% c('SUSSOL', 'Turb')) %>%
       group_by(site, WaterYear, Month, nSamples) %>%
-      summarise(
+      reframe(
         shortParmName = 'Sediment',
-        WQI = sum(WQI^-1)^-1 * length(WQI),
-        .groups = 'drop'
+        WQI = sum(WQI^-1)^-1 * length(WQI)
       )
   } else {
     sediment_score <- NULL
@@ -213,14 +212,13 @@ wqi_calc <- function(period = c('Annual', 'Monthly'),
       filter(shortParmName %in% c('TPN', 'TP_P')) %>%
       left_join(np_ratios, by = c('site', 'WaterYear', 'Month','nSamples')) %>%
       group_by(site, WaterYear, Month, nSamples) %>%
-      summarise(
+      reframe(
         WQI = case_when(
           is.na(NPRatio) ~ min(WQI, na.rm = TRUE),
           NPRatio <= 10 ~ WQI[shortParmName == 'TPN'],
           NPRatio > 20 ~ WQI[shortParmName == 'TP_P'],
           TRUE ~ min(WQI, na.rm = TRUE)
-        ),
-        .groups = 'drop'
+        )
       ) %>%
       mutate(shortParmName = 'Nutrient')
   } else {
@@ -239,9 +237,8 @@ wqi_calc <- function(period = c('Annual', 'Monthly'),
       Penalty = ifelse(shortParmName %in% c('Sediment', 'Nutrient') & Penalty > 20, 
                        20, Penalty)
     ) %>%
-    summarise(
-      WQI = mean(WQI, na.rm = TRUE) - sum(Penalty, na.rm = TRUE),
-      .groups = 'drop'
+    reframe(
+      WQI = mean(WQI, na.rm = TRUE) - sum(Penalty, na.rm = TRUE)
     ) %>%
     mutate(WQI = pmax(WQI, 1))
   
@@ -253,9 +250,8 @@ wqi_calc <- function(period = c('Annual', 'Monthly'),
   # Calculate annual WQI index (average of 3 lowest monthly scores) ----
   annual_wqi <- monthly_wqi %>%
     group_by(site, WaterYear, nSamples) %>%
-    summarise(
-      WQI = mean(sort(WQI)[1:min(3, length(WQI))], na.rm = TRUE),
-      .groups = 'drop'
+    reframe(
+      WQI = mean(sort(WQI)[1:min(3, length(WQI))], na.rm = TRUE)
     )
   
   if (period == 'Annual' & summary_by == 'Index') {
@@ -303,18 +299,17 @@ wqi_calc <- function(period = c('Annual', 'Monthly'),
       select(-WQI_Value, -value) %>%
       bind_rows(sediment_score, nutrient_score) %>%
       group_by(site, shortParmName, WaterYear, nSamples) %>%
-      summarise(
+      reframe(
         # For Temp, Oxygen, pH: take worst (minimum) month
         # For others: average of 3 worst months
         WQI = if_else(
           grepl('Oxygen|Temp|pH', shortParmName),
           min(WQI, na.rm = TRUE),
           mean(sort(WQI)[1:min(3, length(WQI))], na.rm = TRUE)
-        ),
-        .groups = 'drop'
+        )
       ) %>%
       group_by(site, shortParmName, WaterYear, nSamples) %>%
-      summarise(WQI = mean(WQI, na.rm = TRUE), .groups = 'drop') %>%
+      reframe(WQI = mean(WQI, na.rm = TRUE)) %>%
       mutate(
         shortParmName = factor(
           shortParmName,
