@@ -9,7 +9,7 @@ source("helper_functions/wqi_function.R")
 wqp_data <- read_parquet("inputs/wqp_data.parquet") |>
   filter(parameter != "Depth to water from rim of well casing")
 
-wqx_site_names<-unique(wqp_data$SITE_CODE)
+wqx_site_names <- unique(wqp_data$SITE_CODE)
 
 ## Import external stream use designations
 stream_use_designations <- readxl::read_xlsx(
@@ -27,7 +27,7 @@ stream_use_designations <- readxl::read_xlsx(
   ) |>
   filter(!is.na(SITE_CODE)) |>
   rowwise() |>
-  mutate(SITE_CODE=wqx_site_names[which(grepl(SITE_CODE,wqx_site_names))[1]]) |>
+  mutate(SITE_CODE = wqx_site_names[which(grepl(SITE_CODE, wqx_site_names))[1]]) |>
   ungroup()
 
 ## Create site use designations file
@@ -45,8 +45,8 @@ streams_sites <- wqp_data |>
   )
 
 write_parquet(streams_sites, "outputs/streams_sites.parquet")
-#saveRDS(streams_sites, "outputs/streams_sites.RDS")
-#write.csv(streams_sites, "outputs/streams_sites.csv", row.names = F)
+# saveRDS(streams_sites, "outputs/streams_sites.RDS")
+# write.csv(streams_sites, "outputs/streams_sites.csv", row.names = F)
 
 ## Create streams water quality data
 streams_wq_dat <- wqp_data |>
@@ -99,7 +99,7 @@ streams_wq_dat <- wqp_data |>
   )
 
 write_parquet(streams_wq_dat, "outputs/streams_wq_dat.parquet")
-#saveRDS(streams_wq_dat, "outputs/streams_wq_dat.RDS")
+# saveRDS(streams_wq_dat, "outputs/streams_wq_dat.RDS")
 
 ## Create list of sites
 sites_list <- setNames(
@@ -192,14 +192,14 @@ annual_wqi <- streams_wq_dat |>
     )
   )
 write_parquet(annual_wqi, "outputs/annual_wqi.parquet")
-#saveRDS(annual_wqi, "outputs/annual_wqi.RDS")
+# saveRDS(annual_wqi, "outputs/annual_wqi.RDS")
 
 annual_wqi_by_parameter <- streams_wq_dat |>
   left_join(streams_sites |> select(SITE_CODE, AquaticLifeUse), by = "SITE_CODE") |>
   left_join(parm_table, by = "parameter") |>
   filter(!is.na(shortParmName)) |>
   with(
-    #.,
+    # .,
     wqi_calc(
       site = SITE_CODE,
       value = newResultValue,
@@ -235,7 +235,7 @@ monthly_wqi_by_parameter <- streams_wq_dat |>
   left_join(parm_table, by = "parameter") |>
   filter(!is.na(shortParmName)) |>
   with(
-    #.,
+    # .,
     wqi_calc(
       site = SITE_CODE,
       value = newResultValue,
@@ -272,7 +272,7 @@ monthly_wqi <- streams_wq_dat |>
   left_join(parm_table, by = "parameter") |>
   filter(!is.na(shortParmName)) |>
   with(
-    #.,
+    # .,
     wqi_calc(
       site = SITE_CODE,
       value = newResultValue,
@@ -303,7 +303,58 @@ monthly_wqi <- streams_wq_dat |>
 saveRDS(monthly_wqi, "outputs/monthly_wqi.RDS")
 write_parquet(monthly_wqi, "outputs/monthly_wqi.parquet")
 
-
-annual_wqi_by_parameter %>%
-  filter(nSamples>=6) %>%
+# Average past 5 years of data by site for public dashboard
+startWaterYear <- (year(Sys.Date()) - ifelse(month(Sys.Date() - 2) >= 10, 4, 5)) # assume 2 month reporting lag
+endWaterYear <- (year(Sys.Date()) - ifelse(month(Sys.Date() - 2) >= 10, 0, 1))
+streams_wq_dat |>
+  left_join(streams_sites |> select(SITE_CODE, AquaticLifeUse), by = "SITE_CODE") |>
+  left_join(parm_table, by = "parameter") |>
+  filter(!is.na(shortParmName)) |>
+  filter(!is.na(newResultValue)) |>
+  filter(WaterYear >= startWaterYear & WaterYear <= endWaterYear) |>
+  group_by(SITE_CODE, AquaticLifeUse, shortParmName, Month) |>
+  reframe(
+    n = n(),
+    newResultValue = mean(newResultValue, na.rm = T)
+  ) |>
+  mutate(FakeDate = as.Date(paste(ifelse(Month >= 10, 1999, 2000), Month, "15", sep = "-"))) |>
+  with(
+    # .,
+    wqi_calc(
+      site = SITE_CODE,
+      value = newResultValue,
+      shortParmName = shortParmName,
+      date = FakeDate,
+      TemperatureCode = ifelse(
+        AquaticLifeUse == "Core Summer Salmonid Habitat",
+        8,
+        ifelse(
+          AquaticLifeUse == "Salmonid Spawning, Rearing, and Migration",
+          9,
+          NA
+        )
+      ),
+      OxygenCode = ifelse(
+        AquaticLifeUse == "Core Summer Salmonid Habitat",
+        26,
+        ifelse(
+          AquaticLifeUse == "Salmonid Spawning, Rearing, and Migration",
+          21,
+          NA
+        )
+      ),
+      small_PS_stream = T, # assume all puget sound small streams
+      summary_by = "ByParameter"
+    )
+  ) |>
+  select(-WaterYear, -nSamples) |>
+  left_join(
+    streams_wq_dat |>
+      filter(WaterYear >= startWaterYear & WaterYear <= endWaterYear) |>
+      group_by(site = SITE_CODE) |>
+      reframe(WY_Range = paste(min(WaterYear), max(WaterYear), sep = "-"))
+  ) |>
+  # drop sites that don't have scores for both Temperature and FC in the past 5 years;
+  # likely not associated with routine monitoring and are not appropriate for this summary
+  filter(!is.na(Temp) & !is.na(FC)) |>
   write_csv("public_dashboard_outputs_streams/recent_WQI.csv")

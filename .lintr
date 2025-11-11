@@ -10,5 +10,4 @@ linters: lintr::linters_with_defaults(
   whitespace_linter(),
   semicolon_linter(),
   quotes_linter(delimiter = '"'),
-  pipe_used_linter()
-)
+  pipe_consistency_linter(pipe="|>"))

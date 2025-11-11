@@ -114,6 +114,7 @@ monthly_wqi_plot <- function(monthly_wqi_by_parameter, monthly_wqi, input) {
     filter(site == input$main_site & WaterYear == input$wqi_year) %>%
     left_join(monthly_wqi %>% rename(`Summary Score` = WQI)) %>%
     rename(Bacteria = FC, Temperature = Temp) %>%
+    group_by(site,WaterYear,Month) %>%
     tidyr::pivot_longer(
       cols = -c(site:Month),
       names_to = "Parameter",
