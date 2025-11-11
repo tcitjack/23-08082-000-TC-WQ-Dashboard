@@ -85,7 +85,7 @@ wqi_calc <- function(period = c("Annual", "Monthly"),
       site, shortParmName, WaterYear, Month, MonthFraction,
       TemperatureCode, OxygenCode
     ) %>%
-    summarise(value = mean(value, na.rm = TRUE), .groups = "drop")
+    reframe(value = mean(value, na.rm = TRUE))
 
   if (debug) {
     message("\nAfter monthly aggregation:")
@@ -170,8 +170,7 @@ wqi_calc <- function(period = c("Annual", "Monthly"),
     reframe(
       value = mean(value, na.rm = TRUE),
       WQI_Value = mean(WQI_Value, na.rm = TRUE),
-      WQI = mean(WQI, na.rm = TRUE),
-      .groups = "drop"
+      WQI = mean(WQI, na.rm = TRUE)
     ) %>%
     mutate(Month = factor(Month, levels = c(10:12, 1:9))) %>%
     arrange(site, shortParmName, WaterYear, Month) %>%
